@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2D → 3D Map</title>
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      height: 300vh;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #000;
+    }
+
+    #map {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    /* Progress bar */
+    #progress-bar {
+      position: fixed;
+      bottom: 0; left: 0;
+      height: 3px;
+      width: 0%;
+      background: linear-gradient(90deg, #4fc3f7, #ab47bc);
+      z-index: 100;
+      transition: width 0.05s linear;
+    }
+
+    /* Overlay sections */
+    #overlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .section {
+      position: absolute;
+      width: 100%;
+      padding: 0 48px;
+      transition: opacity 0.4s ease, transform 0.4s ease;
+    }
+
+    /* Section 1 — top */
+    #section-start {
+      top: 50%;
+      transform: translateY(-50%);
+      text-align: center;
+      opacity: 1;
+    }
+
+    #section-start h1 {
+      font-size: clamp(2rem, 5vw, 4rem);
+      font-weight: 700;
+      color: #fff;
+      text-shadow: 0 2px 20px rgba(0,0,0,0.8);
+      letter-spacing: -0.5px;
+    }
+
+    #section-start p {
+      margin-top: 16px;
+      font-size: 1.1rem;
+      color: rgba(255,255,255,0.75);
+      text-shadow: 0 1px 10px rgba(0,0,0,0.8);
+    }
+
+    .scroll-hint {
+      margin-top: 32px;
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      color: rgba(255,255,255,0.6);
+      font-size: 0.85rem;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .scroll-arrow {
+      width: 20px;
+      height: 20px;
+      border-right: 2px solid rgba(255,255,255,0.5);
+      border-bottom: 2px solid rgba(255,255,255,0.5);
+      transform: rotate(45deg);
+      animation: bounce 1.5s infinite;
+    }
+
+    @keyframes bounce {
+      0%, 100% { transform: rotate(45deg) translateY(0); opacity: 0.5; }
+      50% { transform: rotate(45deg) translateY(4px); opacity: 1; }
+    }
+
+    /* Section 2 — end */
+    #section-end {
+      bottom: 60px;
+      left: 0;
+      text-align: center;
+      opacity: 0;
+      transform: translateY(20px);
+    }
+
+    #section-end h2 {
+      font-size: clamp(1.5rem, 3vw, 2.5rem);
+      font-weight: 600;
+      color: #fff;
+      text-shadow: 0 2px 20px rgba(0,0,0,0.9);
+    }
+
+    #section-end p {
+      margin-top: 10px;
+      font-size: 1rem;
+      color: rgba(255,255,255,0.65);
+      text-shadow: 0 1px 10px rgba(0,0,0,0.8);
+    }
+
+    /* Pitch badge */
+    #pitch-badge {
+      position: fixed;
+      top: 24px;
+      right: 24px;
+      z-index: 20;
+      background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 12px;
+      padding: 10px 18px;
+      color: #fff;
+      font-size: 0.8rem;
+      letter-spacing: 0.5px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 2px;
+    }
+
+    #pitch-badge .label {
+      color: rgba(255,255,255,0.5);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    #pitch-value {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: #4fc3f7;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Mode badge */
+    #mode-badge {
+      position: fixed;
+      top: 24px;
+      left: 24px;
+      z-index: 20;
+      background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 12px;
+      padding: 8px 16px;
+      color: #fff;
+      font-size: 0.85rem;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      transition: background 0.4s ease;
+    }
+
+    #mode-badge.mode-3d {
+      background: rgba(100, 50, 150, 0.65);
+      border-color: rgba(171, 71, 188, 0.4);
+    }
+  </style>
+</head>
+<body>
+
+  <div id="map"></div>
+
+  <div id="overlay">
+    <div class="section" id="section-start">
+      <h1>Explore the World</h1>
+      <p>A flat map, waiting to come alive.</p>
+      <div class="scroll-hint">
+        <span>Scroll down</span>
+        <div class="scroll-arrow"></div>
+      </div>
+    </div>
+
+    <div class="section" id="section-end">
+      <h2>You're in 3D</h2>
+      <p>Scroll back up to return to the flat view.</p>
+    </div>
+  </div>
+
+  <div id="pitch-badge">
+    <span class="label">Pitch</span>
+    <span id="pitch-value">0°</span>
+  </div>
+
+  <div id="mode-badge">2D</div>
+  <div id="progress-bar"></div>
+
+  <script>
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: 'https://tiles.openfreemap.org/styles/liberty',
+      center: [12, 30],
+      zoom: 2.5,
+      pitch: 0,
+      bearing: 0,
+      interactive: false,
+      attributionControl: { compact: true }
+    });
+
+    const sectionStart = document.getElementById('section-start');
+    const sectionEnd   = document.getElementById('section-end');
+    const pitchValue   = document.getElementById('pitch-value');
+    const modeBadge    = document.getElementById('mode-badge');
+    const progressBar  = document.getElementById('progress-bar');
+
+    function easeInOut(t) {
+      return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+    }
+
+    function clamp(val, min, max) {
+      return Math.min(Math.max(val, min), max);
+    }
+
+    window.addEventListener('scroll', () => {
+      const scrolled = window.scrollY;
+      const maxScroll = document.body.scrollHeight - window.innerHeight;
+      const rawProgress = clamp(scrolled / maxScroll, 0, 1);
+      const progress = easeInOut(rawProgress);
+
+      // Map pitch: 0° → 60°
+      const pitch = progress * 60;
+      // Subtle bearing rotation: 0° → -20°
+      const bearing = progress * -20;
+
+      map.easeTo({ pitch, bearing, duration: 0 });
+
+      // Update UI
+      pitchValue.textContent = Math.round(pitch) + '°';
+      progressBar.style.width = (rawProgress * 100) + '%';
+
+      // Fade start section out as we scroll
+      const startOpacity = clamp(1 - rawProgress * 3, 0, 1);
+      sectionStart.style.opacity = startOpacity;
+      sectionStart.style.transform = `translateY(calc(-50% - ${rawProgress * 40}px))`;
+
+      // Fade end section in near the bottom
+      const endOpacity = clamp((rawProgress - 0.7) / 0.3, 0, 1);
+      sectionEnd.style.opacity = endOpacity;
+      sectionEnd.style.transform = `translateY(${(1 - endOpacity) * 20}px)`;
+
+      // Toggle mode badge
+      if (pitch > 5) {
+        modeBadge.textContent = '3D';
+        modeBadge.classList.add('mode-3d');
+      } else {
+        modeBadge.textContent = '2D';
+        modeBadge.classList.remove('mode-3d');
+      }
+    });
+  </script>
+</body>
+</html>
